@@ -1,0 +1,14 @@
+{
+  "name": "waenhancerx-otp-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Simple OTP relay server for WaEnhancerX webhook callbacks.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  }
+}

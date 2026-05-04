@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OTP Relay Console</title>
+  <style>
+    :root {
+      --paper: rgba(255, 252, 246, 0.92);
+      --ink: #1d2433;
+      --muted: #687387;
+      --accent: #cb5c2c;
+      --accent-dark: #8f3411;
+      --line: rgba(29, 36, 51, 0.1);
+      --good: #1d7a55;
+      --shadow: 0 24px 80px rgba(58, 39, 27, 0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(203, 92, 44, 0.22), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(29, 122, 85, 0.18), transparent 24%),
+        linear-gradient(160deg, #f8f2e9 0%, #efe6da 100%);
+      min-height: 100vh;
+    }
+
+    .shell {
+      width: min(1120px, calc(100% - 32px));
+      margin: 32px auto;
+      padding: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      border-radius: 28px;
+      background: var(--paper);
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: 1.6fr 1fr;
+      align-items: end;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent-dark);
+      font-weight: 700;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 28px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 999px;
+    }
+
+    h1 {
+      margin: 10px 0 12px;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+    }
+
+    .hero p,
+    .meta,
+    .api-note,
+    th {
+      color: var(--muted);
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 58ch;
+      line-height: 1.7;
+    }
+
+    .panel-grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 24px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.75);
+      padding: 20px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    }
+
+    .card h2 {
+      margin: 0 0 14px;
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .latest {
+      grid-column: span 7;
+      display: grid;
+      gap: 14px;
+    }
+
+    .stats {
+      grid-column: span 5;
+      display: grid;
+      gap: 14px;
+    }
+
+    .code-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, rgba(203, 92, 44, 0.12), rgba(203, 92, 44, 0.02));
+    }
+
+    .code {
+      font: 700 clamp(30px, 6vw, 56px)/1 "Consolas", "SFMono-Regular", monospace;
+      letter-spacing: 0.14em;
+      color: var(--accent-dark);
+    }
+
+    .tag {
+      display: inline-flex;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(29, 122, 85, 0.11);
+      color: var(--good);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+    }
+
+    .meta strong {
+      color: var(--ink);
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .stat-box {
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(29, 36, 51, 0.04);
+      border: 1px solid rgba(29, 36, 51, 0.06);
+    }
+
+    .stat-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .stat-value {
+      margin-top: 6px;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
+    .toolbar {
+      grid-column: span 12;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .toolbar-left,
+    .toolbar-right {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    input,
+    button {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      font: inherit;
+    }
+
+    input {
+      min-width: 210px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.86);
+      color: var(--ink);
+    }
+
+    button {
+      padding: 12px 16px;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
+      transition: transform 140ms ease, opacity 140ms ease;
+    }
+
+    button:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
+    .secondary {
+      background: rgba(29, 36, 51, 0.05);
+      color: var(--ink);
+    }
+
+    .table-card {
+      grid-column: span 12;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 14px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    td {
+      font-size: 14px;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .mono {
+      font-family: "Consolas", "SFMono-Regular", monospace;
+    }
+
+    .message {
+      max-width: 46ch;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+
+    .api-card {
+      grid-column: span 12;
+    }
+
+    pre {
+      margin: 0;
+      padding: 16px;
+      border-radius: 18px;
+      background: #18202b;
+      color: #f4f0e7;
+      overflow-x: auto;
+      line-height: 1.55;
+      font-family: "Consolas", "SFMono-Regular", monospace;
+    }
+
+    .empty {
+      padding: 30px 12px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .danger {
+      color: #9d2a22;
+    }
+
+    @media (max-width: 920px) {
+      .hero,
+      .latest,
+      .stats {
+        grid-template-columns: 1fr;
+        grid-column: span 12;
+      }
+
+      .stat-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .shell {
+        width: min(100%, calc(100% - 20px));
+        margin: 10px auto;
+        padding: 16px;
+        border-radius: 22px;
+      }
+
+      .stat-grid {
+        grid-template-columns: 1fr;
+      }
+
+      input {
+        min-width: 100%;
+      }
+
+      .toolbar-left,
+      .toolbar-right {
+        width: 100%;
+      }
+
+      .toolbar-right button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">WaEnhancerX Relay</div>
+        <h1>OTP Relay Console</h1>
+        <p>This page shows recent OTP messages and provides simple retrieval endpoints for external clients. It refreshes every 5 seconds and supports sender-number filtering.</p>
+      </div>
+      <div class="card">
+        <h2>Server</h2>
+        <div class="row meta"><strong id="server-origin"></strong></div>
+        <div class="row meta">Webhook: <span class="mono">/api/otp/webhook</span></div>
+        <div class="row meta">Latest API: <span class="mono">/api/otp/latest</span></div>
+        <div class="row meta">Text API: <span class="mono">/api/otp/latest.txt</span></div>
+      </div>
+    </section>
+
+    <section class="panel-grid">
+      <article class="card latest">
+        <h2>Latest OTP</h2>
+        <div class="code-box">
+          <div>
+            <div class="tag" id="latest-source">Waiting</div>
+            <div class="code" id="latest-code">------</div>
+          </div>
+          <button id="copy-code-btn" type="button">Copy Code</button>
+        </div>
+        <div class="meta" id="latest-meta">No OTP received yet.</div>
+        <div class="message" id="latest-message"></div>
+      </article>
+
+      <article class="card stats">
+        <h2>Stats</h2>
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="stat-label">Stored OTPs</div>
+            <div class="stat-value" id="stat-total">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Visible Items</div>
+            <div class="stat-value" id="stat-visible">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Auto Refresh</div>
+            <div class="stat-value">5s</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Last Sync</div>
+            <div class="stat-value" id="stat-sync">--</div>
+          </div>
+        </div>
+      </article>
+
+      <section class="card toolbar">
+        <div class="toolbar-left">
+          <input id="sender-filter" type="text" placeholder="Filter by sender number, e.g. 12345">
+          <input id="limit-filter" type="number" min="1" max="100" value="20" placeholder="Limit">
+        </div>
+        <div class="toolbar-right">
+          <button class="secondary" id="clear-filter-btn" type="button">Clear Filter</button>
+          <button id="refresh-btn" type="button">Refresh Now</button>
+        </div>
+      </section>
+
+      <article class="card table-card">
+        <h2>Recent OTPs</h2>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Sender</th>
+                <th>Source</th>
+                <th>Received</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody id="otp-table-body">
+              <tr><td class="empty" colspan="5">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="card api-card">
+        <h2>API Examples</h2>
+        <p class="api-note">These are the most useful endpoints for external clients. You can fetch the latest OTP by sender number or return plain text directly.</p>
+        <pre id="api-examples"></pre>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const tableBody = document.getElementById("otp-table-body");
+    const latestCodeEl = document.getElementById("latest-code");
+    const latestSourceEl = document.getElementById("latest-source");
+    const latestMetaEl = document.getElementById("latest-meta");
+    const latestMessageEl = document.getElementById("latest-message");
+    const senderFilterEl = document.getElementById("sender-filter");
+    const limitFilterEl = document.getElementById("limit-filter");
+    const statTotalEl = document.getElementById("stat-total");
+    const statVisibleEl = document.getElementById("stat-visible");
+    const statSyncEl = document.getElementById("stat-sync");
+    const apiExamplesEl = document.getElementById("api-examples");
+    const originEl = document.getElementById("server-origin");
+    const copyCodeBtn = document.getElementById("copy-code-btn");
+
+    originEl.textContent = window.location.origin;
+
+    function buildQuery() {
+      const params = new URLSearchParams();
+      const senderNumber = senderFilterEl.value.trim();
+      const limit = limitFilterEl.value.trim();
+
+      if (senderNumber) {
+        params.set("sender_number", senderNumber);
+      }
+      if (limit) {
+        params.set("limit", limit);
+      }
+
+      return params;
+    }
+
+    function updateApiExamples() {
+      const params = buildQuery();
+      const suffix = params.toString() ? "?" + params.toString() : "";
+      apiExamplesEl.textContent =
+`GET ${window.location.origin}/api/otp/latest${suffix}
+GET ${window.location.origin}/api/otp/latest.txt${suffix}
+GET ${window.location.origin}/api/otps${suffix}`;
+    }
+
+    function formatDate(value) {
+      if (!value) {
+        return "--";
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return String(value);
+      }
+
+      return date.toLocaleString("en-CA", { hour12: false });
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function renderLatest(record) {
+      if (!record) {
+        latestSourceEl.textContent = "Waiting";
+        latestCodeEl.textContent = "------";
+        latestMetaEl.textContent = "No OTP received yet.";
+        latestMessageEl.textContent = "";
+        return;
+      }
+
+      latestSourceEl.textContent = record.source || "whatsapp";
+      latestCodeEl.textContent = record.code || "------";
+      latestMetaEl.innerHTML =
+        "<strong>" + escapeHtml(record.senderName || record.senderNumber || "Unknown") + "</strong>" +
+        " | " + escapeHtml(record.senderNumber || "--") +
+        " | " + escapeHtml(formatDate(record.receivedAt));
+      latestMessageEl.textContent = record.message || "";
+    }
+
+    function renderList(records, total) {
+      statTotalEl.textContent = String(total || 0);
+      statVisibleEl.textContent = String(records.length);
+
+      if (!records.length) {
+        tableBody.innerHTML = '<tr><td class="empty" colspan="5">No matching records.</td></tr>';
+        return;
+      }
+
+      tableBody.innerHTML = records.map((record) => {
+        return `
+          <tr>
+            <td class="mono"><strong>${escapeHtml(record.code || "--")}</strong></td>
+            <td>
+              <div><strong>${escapeHtml(record.senderName || "Unknown")}</strong></div>
+              <div class="meta mono">${escapeHtml(record.senderNumber || "--")}</div>
+            </td>
+            <td class="mono">${escapeHtml(record.source || "--")}</td>
+            <td class="mono">${escapeHtml(formatDate(record.receivedAt))}</td>
+            <td class="message">${escapeHtml(record.message || "")}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    async function refresh() {
+      updateApiExamples();
+
+      const params = buildQuery();
+      const latestUrl = "/api/otp/latest" + (params.toString() ? "?" + params.toString() : "");
+      const listUrl = "/api/otps" + (params.toString() ? "?" + params.toString() : "");
+
+      try {
+        const [latestRes, listRes] = await Promise.all([
+          fetch(latestUrl, { cache: "no-store" }),
+          fetch(listUrl, { cache: "no-store" })
+        ]);
+
+        const latest = latestRes.ok ? await latestRes.json() : null;
+        const list = listRes.ok ? await listRes.json() : { items: [], total: 0 };
+
+        renderLatest(latest && latest.record ? latest.record : null);
+        renderList(list.items || [], list.total || 0);
+        statSyncEl.textContent = new Date().toLocaleTimeString("en-GB", { hour12: false });
+      } catch (error) {
+        latestSourceEl.textContent = "Offline";
+        latestCodeEl.textContent = "ERROR";
+        latestMetaEl.innerHTML = '<span class="danger">Server unavailable. Check whether the service is running.</span>';
+        latestMessageEl.textContent = error.message || String(error);
+        tableBody.innerHTML = '<tr><td class="empty danger" colspan="5">Request failed: ' + escapeHtml(error.message || String(error)) + '</td></tr>';
+      }
+    }
+
+    copyCodeBtn.addEventListener("click", async () => {
+      const code = latestCodeEl.textContent.trim();
+      if (!code || code === "------" || code === "ERROR") {
+        return;
+      }
+
+      await navigator.clipboard.writeText(code);
+      copyCodeBtn.textContent = "Copied";
+      window.setTimeout(() => {
+        copyCodeBtn.textContent = "Copy Code";
+      }, 1200);
+    });
+
+    document.getElementById("refresh-btn").addEventListener("click", refresh);
+    document.getElementById("clear-filter-btn").addEventListener("click", () => {
+      senderFilterEl.value = "";
+      limitFilterEl.value = "20";
+      refresh();
+    });
+
+    senderFilterEl.addEventListener("change", refresh);
+    limitFilterEl.addEventListener("change", refresh);
+
+    refresh();
+    window.setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
