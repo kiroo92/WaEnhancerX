@@ -238,6 +238,10 @@
     <string name="call_type_buttons_ended">未接来电</string>
     <string name="enable_tasker_automation">启用 Tasker 自动化</string>
     <string name="enable_tasker_automation_sum">允许在 Tasker 中使用意图接收和发送消息</string>
+    <string name="otp_webhook_enabled">验证码回调</string>
+    <string name="otp_webhook_enabled_sum">识别验证码消息，并将提取出的验证码发送到你的接口</string>
+    <string name="otp_webhook_url">验证码回调地址</string>
+    <string name="otp_webhook_url_sum">收到验证码消息时，以 JSON POST 到这个接口</string>
     <string name="disable_auto_status">禁用自动跳过动态</string>
     <string name="disable_auto_status_sum">防止当前动态自动进入下一个动态。</string>
     <string name="toast_on_viewed_status">当您的动态被查看时弹窗提示</string>

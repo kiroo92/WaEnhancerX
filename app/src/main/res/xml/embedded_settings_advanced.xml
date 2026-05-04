@@ -60,6 +60,18 @@
             app:title="@string/enable_tasker_automation" />
 
         <rikka.material.preference.MaterialSwitchPreference
+            app:defaultValue="false"
+            app:key="otp_webhook_enabled"
+            app:summary="@string/otp_webhook_enabled_sum"
+            app:title="@string/otp_webhook_enabled" />
+
+        <EditTextPreference
+            app:dependency="otp_webhook_enabled"
+            app:key="otp_webhook_url"
+            app:summary="@string/otp_webhook_url_sum"
+            app:title="@string/otp_webhook_url" />
+
+        <rikka.material.preference.MaterialSwitchPreference
             android:defaultValue="true"
             android:summary="@string/custom_filters_sum"
             app:key="custom_filters"

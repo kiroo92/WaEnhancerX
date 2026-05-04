@@ -154,6 +154,22 @@ public class FeatureCatalog {
                                 "general_home",
                                 Arrays.asList("tasker", "automation", "intent")));
 
+                catalog.add(new SearchableFeature("otp_webhook_enabled",
+                                context.getString(R.string.otp_webhook_enabled),
+                                context.getString(R.string.otp_webhook_enabled_sum),
+                                SearchableFeature.Category.GENERAL_HOME,
+                                SearchableFeature.FragmentType.GENERAL,
+                                "general_home",
+                                Arrays.asList("otp", "verification", "code", "webhook", "api", "callback", "验证码")));
+
+                catalog.add(new SearchableFeature("otp_webhook_url",
+                                context.getString(R.string.otp_webhook_url),
+                                context.getString(R.string.otp_webhook_url_sum),
+                                SearchableFeature.Category.GENERAL_HOME,
+                                SearchableFeature.FragmentType.GENERAL,
+                                "general_home",
+                                Arrays.asList("otp", "webhook", "url", "endpoint", "api", "接口")));
+
                 // GENERAL FRAGMENT - Homescreen sub-preferences
                 catalog.add(new SearchableFeature("buttonaction",
                                 context.getString(R.string.show_menu_buttons_as_icons),
