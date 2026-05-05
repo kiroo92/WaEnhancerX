@@ -213,23 +213,27 @@ public class Tasker extends Feature {
             name = senderNumber;
         }
 
+        final String resolvedName = name;
+        final String resolvedSenderNumber = senderNumber;
+        final String resolvedSenderJid = senderJid;
+
         if (otpWebhookEnabled) {
-            otpDebugToast("msg from=" + sampleSender(senderNumber) + " len=" + msg.length());
+            otpDebugToast("msg from=" + sampleSender(resolvedSenderNumber) + " len=" + msg.length());
         }
 
         if (taskerEnabled) {
             new Handler(Utils.getApplication().getMainLooper()).post(() -> {
                 Intent intent = new Intent("com.waenhancer.MESSAGE_RECEIVED");
-                intent.putExtra("number", senderNumber);
-                intent.putExtra("jid", senderJid);
-                intent.putExtra("name", name);
+                intent.putExtra("number", resolvedSenderNumber);
+                intent.putExtra("jid", resolvedSenderJid);
+                intent.putExtra("name", resolvedName);
                 intent.putExtra("message", msg);
                 Utils.getApplication().sendBroadcast(intent);
             });
         }
 
         if (otpWebhookEnabled) {
-            dispatchOtpWebhook(fMessage, name, senderNumber, senderJid, msg);
+            dispatchOtpWebhook(fMessage, resolvedName, resolvedSenderNumber, resolvedSenderJid, msg);
         }
     }
 
