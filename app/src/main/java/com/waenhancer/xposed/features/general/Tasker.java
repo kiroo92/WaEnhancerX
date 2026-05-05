@@ -11,6 +11,7 @@ import android.text.TextUtils;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import com.waenhancer.xposed.core.Feature;
@@ -22,7 +23,15 @@ import com.waenhancer.xposed.utils.Utils;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -145,29 +154,20 @@ public class Tasker extends Feature {
     }
 
     private void handleReceivedMessage(@NonNull XC_MethodHook.MethodHookParam param) {
-        if (param.args == null || param.args.length <= 4) {
-            if (otpWebhookEnabled) {
-                otpDebugToast("receipt skipped args len=" + (param.args == null ? "null" : param.args.length));
-            }
-            return;
+        if (otpWebhookEnabled) {
+            otpDebugToast("receipt args=" + describeArgs(param.args));
         }
-        if (Objects.equals(param.args[4], "sender")) {
+        if (hasStringArg(param.args, "sender")) {
             if (otpWebhookEnabled) {
                 otpDebugToast("receipt skipped sender marker");
             }
             return;
         }
-        if (param.args[1] == null || param.args[3] == null) {
-            if (otpWebhookEnabled) {
-                otpDebugToast("receipt skipped empty receipt args");
-            }
-            return;
-        }
 
-        var fMessage = new FMessageWpp.Key(param.args[3]).getFMessage();
+        var fMessage = resolveFMessage(param);
         if (fMessage == null || fMessage.getKey() == null) {
             if (otpWebhookEnabled) {
-                otpDebugToast("receipt skipped no message object");
+                otpDebugToast("receipt skipped no message " + describeArgs(param.args));
             }
             return;
         }
@@ -219,6 +219,234 @@ public class Tasker extends Feature {
         if (otpWebhookEnabled) {
             dispatchOtpWebhook(fMessage, name, number, msg);
         }
+    }
+
+    @Nullable
+    private FMessageWpp resolveFMessage(@NonNull XC_MethodHook.MethodHookParam param) {
+        var fromArgs = resolveFMessageFromArgs(param.args);
+        if (fromArgs != null) {
+            return fromArgs;
+        }
+        return resolveFMessageFromReceiptParts(param.args);
+    }
+
+    @Nullable
+    private FMessageWpp resolveFMessageFromArgs(@Nullable Object[] args) {
+        if (args == null || args.length == 0) {
+            return null;
+        }
+
+        ArrayList<FMessageWpp> candidates = new ArrayList<>();
+        Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Object arg : args) {
+            collectFMessageCandidates(arg, candidates, visited, 0);
+        }
+        return chooseIncomingCandidate(candidates);
+    }
+
+    @Nullable
+    private FMessageWpp resolveFMessageFromReceiptParts(@Nullable Object[] args) {
+        if (args == null || args.length == 0) {
+            return null;
+        }
+
+        ArrayList<Object> userJids = new ArrayList<>();
+        ArrayList<String> messageIds = new ArrayList<>();
+        for (Object arg : args) {
+            if (isJidObject(arg)) {
+                userJids.add(arg);
+                continue;
+            }
+            if (arg instanceof String value && isPossibleMessageId(value)) {
+                messageIds.add(value);
+            }
+        }
+
+        ArrayList<FMessageWpp> candidates = new ArrayList<>();
+        for (Object userJidObject : userJids) {
+            FMessageWpp.UserJid userJid = new FMessageWpp.UserJid(userJidObject);
+            if (userJid.isNull()) {
+                continue;
+            }
+            for (String messageId : messageIds) {
+                try {
+                    var fMessage = new FMessageWpp.Key(messageId, userJid, false).getFMessage();
+                    if (fMessage != null) {
+                        candidates.add(fMessage);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        return chooseIncomingCandidate(candidates);
+    }
+
+    private void collectFMessageCandidates(@Nullable Object value, @NonNull List<FMessageWpp> out,
+                                           @NonNull Set<Object> visited, int depth) {
+        if (value == null || depth > 3 || visited.contains(value)) {
+            return;
+        }
+        visited.add(value);
+
+        FMessageWpp fMessage = tryWrapFMessage(value);
+        if (fMessage != null) {
+            out.add(fMessage);
+            return;
+        }
+
+        FMessageWpp fromKey = tryResolveFMessageFromKey(value);
+        if (fromKey != null) {
+            out.add(fromKey);
+            return;
+        }
+
+        Class<?> clazz = value.getClass();
+        if (clazz.isArray()) {
+            int len = java.lang.reflect.Array.getLength(value);
+            for (int i = 0; i < len && i < 10; i++) {
+                collectFMessageCandidates(java.lang.reflect.Array.get(value, i), out, visited, depth + 1);
+            }
+            return;
+        }
+
+        if (value instanceof Iterable<?> iterable) {
+            int i = 0;
+            for (Object item : iterable) {
+                if (i++ >= 10) {
+                    break;
+                }
+                collectFMessageCandidates(item, out, visited, depth + 1);
+            }
+            return;
+        }
+
+        if (shouldSkipGraphScan(clazz)) {
+            return;
+        }
+
+        for (Field field : getAllFields(clazz)) {
+            if (Modifier.isStatic(field.getModifiers()) || field.getType().isPrimitive()) {
+                continue;
+            }
+            try {
+                field.setAccessible(true);
+                collectFMessageCandidates(field.get(value), out, visited, depth + 1);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    @Nullable
+    private FMessageWpp tryWrapFMessage(@Nullable Object value) {
+        if (value == null || FMessageWpp.TYPE == null) {
+            return null;
+        }
+        try {
+            if (FMessageWpp.TYPE.isInstance(value)) {
+                return new FMessageWpp(value);
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    @Nullable
+    private FMessageWpp tryResolveFMessageFromKey(@Nullable Object value) {
+        if (value == null || FMessageWpp.Key.TYPE == null) {
+            return null;
+        }
+        try {
+            if (!FMessageWpp.Key.TYPE.isInstance(value)) {
+                return null;
+            }
+            Object rawMessage = WppCore.getFMessageFromKey(value);
+            if (rawMessage != null) {
+                return new FMessageWpp(rawMessage);
+            }
+            return new FMessageWpp.Key(value).getFMessage();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private FMessageWpp chooseIncomingCandidate(@NonNull List<FMessageWpp> candidates) {
+        FMessageWpp fallback = null;
+        Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (FMessageWpp candidate : candidates) {
+            if (candidate == null || candidate.getObject() == null || seen.contains(candidate.getObject())) {
+                continue;
+            }
+            seen.add(candidate.getObject());
+            FMessageWpp.Key key = candidate.getKey();
+            if (key == null) {
+                continue;
+            }
+            if (fallback == null) {
+                fallback = candidate;
+            }
+            if (!key.isFromMe && key.remoteJid != null && !TextUtils.isEmpty(candidate.getMessageStr())) {
+                return candidate;
+            }
+        }
+        return fallback;
+    }
+
+    private boolean hasStringArg(@Nullable Object[] args, @NonNull String expected) {
+        if (args == null) {
+            return false;
+        }
+        for (Object arg : args) {
+            if (expected.equals(arg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isPossibleMessageId(@NonNull String value) {
+        if (TextUtils.isEmpty(value) || value.length() < 8 || value.length() > 128) {
+            return false;
+        }
+        if ("sender".equals(value) || "inactive".equals(value) || "read".equals(value) || value.contains("@")) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isJidObject(@Nullable Object value) {
+        if (value == null) {
+            return false;
+        }
+        Class<?> type = value.getClass();
+        return (FMessageWpp.UserJid.TYPE_USERJID != null && FMessageWpp.UserJid.TYPE_USERJID.isAssignableFrom(type))
+                || (FMessageWpp.UserJid.TYPE_PHONEUSERJID != null && FMessageWpp.UserJid.TYPE_PHONEUSERJID.isAssignableFrom(type))
+                || (FMessageWpp.UserJid.TYPE_JID != null && FMessageWpp.UserJid.TYPE_JID.isAssignableFrom(type));
+    }
+
+    private boolean shouldSkipGraphScan(@NonNull Class<?> clazz) {
+        if (clazz.isPrimitive() || clazz.isEnum()) {
+            return true;
+        }
+        String name = clazz.getName();
+        return name.startsWith("java.")
+                || name.startsWith("android.")
+                || name.startsWith("androidx.")
+                || name.startsWith("kotlin.")
+                || name.startsWith("okio.")
+                || name.startsWith("okhttp3.")
+                || name.startsWith("org.json.");
+    }
+
+    @NonNull
+    private List<Field> getAllFields(@NonNull Class<?> clazz) {
+        ArrayList<Field> fields = new ArrayList<>();
+        Class<?> current = clazz;
+        while (current != null && current != Object.class) {
+            fields.addAll(Arrays.asList(current.getDeclaredFields()));
+            current = current.getSuperclass();
+        }
+        return fields;
     }
 
     private void dispatchOtpWebhook(@NonNull FMessageWpp message, String name, String number, String rawMessage) {
@@ -420,6 +648,55 @@ public class Tasker extends Feature {
             return "null";
         }
         return shorten(message.replaceAll("\\s+", " "), 45);
+    }
+
+    private String describeArgs(@Nullable Object[] args) {
+        if (args == null) {
+            return "null";
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("len=").append(args.length).append(" [");
+        int limit = Math.min(args.length, 8);
+        for (int i = 0; i < limit; i++) {
+            if (i > 0) {
+                builder.append(", ");
+            }
+            builder.append(i).append("=").append(describeObject(args[i]));
+        }
+        if (args.length > limit) {
+            builder.append(", ...");
+        }
+        builder.append("]");
+        return builder.toString();
+    }
+
+    private String describeObject(@Nullable Object obj) {
+        if (obj == null) {
+            return "null";
+        }
+        if (obj instanceof String value) {
+            if ("sender".equals(value) || "inactive".equals(value) || "read".equals(value)) {
+                return "String(" + value + ")";
+            }
+            return "String(len=" + value.length() + ")";
+        }
+        Class<?> clazz = obj.getClass();
+        if (clazz.isArray()) {
+            Class<?> componentType = clazz.getComponentType();
+            return getSimpleTypeName(componentType) + "[]";
+        }
+        return getSimpleTypeName(clazz);
+    }
+
+    private String getSimpleTypeName(@Nullable Class<?> clazz) {
+        if (clazz == null) {
+            return "null";
+        }
+        String simpleName = clazz.getSimpleName();
+        if (!TextUtils.isEmpty(simpleName)) {
+            return simpleName;
+        }
+        return shorten(clazz.getName(), 30);
     }
 
     private String maskNumber(String number) {
