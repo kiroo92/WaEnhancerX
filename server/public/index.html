@@ -508,6 +508,7 @@ GET ${window.location.origin}/api/otps${suffix}`;
       latestMetaEl.innerHTML =
         "<strong>" + escapeHtml(record.senderName || record.senderNumber || "Unknown") + "</strong>" +
         " | " + escapeHtml(record.senderNumber || "--") +
+        (record.senderJid ? " | " + escapeHtml(record.senderJid) : "") +
         " | " + escapeHtml(formatDate(record.receivedAt));
       latestMessageEl.textContent = record.message || "";
     }
@@ -528,6 +529,7 @@ GET ${window.location.origin}/api/otps${suffix}`;
             <td>
               <div><strong>${escapeHtml(record.senderName || "Unknown")}</strong></div>
               <div class="meta mono">${escapeHtml(record.senderNumber || "--")}</div>
+              ${record.senderJid ? `<div class="meta mono">${escapeHtml(record.senderJid)}</div>` : ""}
             </td>
             <td class="mono">${escapeHtml(record.source || "--")}</td>
             <td class="mono">${escapeHtml(formatDate(record.receivedAt))}</td>

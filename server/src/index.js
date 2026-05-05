@@ -238,8 +238,10 @@ function buildRecord(payload) {
   }
 
   const receivedAt = normalizeDate(payload.received_at || payload.receivedAt || payload.timestamp || Date.now());
-  const senderNumber = normalizePhone(payload.sender_number || payload.senderNumber || payload.from_number || payload.fromNumber || "");
-  const senderName = cleanText(payload.sender_name || payload.senderName || payload.from_name || payload.fromName || "") || senderNumber || "Unknown";
+  const senderPhone = normalizePhone(payload.sender_phone || payload.senderPhone || payload.sender_number || payload.senderNumber || payload.from_number || payload.fromNumber || "");
+  const senderJid = cleanText(payload.sender_jid || payload.senderJid || payload.chat_jid || payload.chatJid || "");
+  const senderNumber = normalizePhone(payload.sender_number || payload.senderNumber || payload.from_number || payload.fromNumber || senderPhone || senderJid);
+  const senderName = cleanText(payload.sender_name || payload.senderName || payload.from_name || payload.fromName || "") || senderPhone || senderNumber || senderJid || "Unknown";
 
   return normalizeStoredRecord({
     id: payload.id || randomUUID(),
@@ -249,6 +251,8 @@ function buildRecord(payload) {
     message: cleanText(payload.message || payload.text || ""),
     senderName,
     senderNumber,
+    senderPhone,
+    senderJid,
     messageId: cleanText(payload.message_id || payload.messageId || ""),
     chatJid: cleanText(payload.chat_jid || payload.chatJid || ""),
     receivedAt,
@@ -265,6 +269,8 @@ function normalizeStoredRecord(record) {
     message: cleanText(record.message) || "",
     senderName: cleanText(record.senderName || record.sender_name) || "Unknown",
     senderNumber: normalizePhone(record.senderNumber || record.sender_number || ""),
+    senderPhone: normalizePhone(record.senderPhone || record.sender_phone || ""),
+    senderJid: cleanText(record.senderJid || record.sender_jid || ""),
     messageId: cleanText(record.messageId || record.message_id || ""),
     chatJid: cleanText(record.chatJid || record.chat_jid || ""),
     receivedAt: normalizeDate(record.receivedAt || record.received_at || Date.now()),

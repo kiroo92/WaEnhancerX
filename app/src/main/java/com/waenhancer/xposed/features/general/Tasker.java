@@ -38,6 +38,7 @@ import java.util.regex.Pattern;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
+import de.robv.android.xposed.XposedHelpers;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.MediaType;
@@ -193,23 +194,34 @@ public class Tasker extends Feature {
         }
 
         var name = WppCore.getContactName(userJid);
-        var number = userJid.getPhoneNumber();
+        var senderNumber = resolveSenderNumber(userJid);
+        var senderJid = resolveSenderJid(userJid);
         var msg = fMessage.getMessageStr();
-        if (TextUtils.isEmpty(msg) || TextUtils.isEmpty(number)) {
+        if (TextUtils.isEmpty(msg)) {
             if (otpWebhookEnabled) {
-                otpDebugToast("receipt skipped empty msg/number");
+                otpDebugToast("receipt skipped empty msg");
             }
             return;
         }
+        if (TextUtils.isEmpty(senderNumber)) {
+            senderNumber = senderJid;
+        }
+        if (TextUtils.isEmpty(senderNumber)) {
+            senderNumber = "unknown";
+        }
+        if (TextUtils.isEmpty(name)) {
+            name = senderNumber;
+        }
 
         if (otpWebhookEnabled) {
-            otpDebugToast("msg from=" + maskNumber(number) + " len=" + msg.length());
+            otpDebugToast("msg from=" + sampleSender(senderNumber) + " len=" + msg.length());
         }
 
         if (taskerEnabled) {
             new Handler(Utils.getApplication().getMainLooper()).post(() -> {
                 Intent intent = new Intent("com.waenhancer.MESSAGE_RECEIVED");
-                intent.putExtra("number", number);
+                intent.putExtra("number", senderNumber);
+                intent.putExtra("jid", senderJid);
                 intent.putExtra("name", name);
                 intent.putExtra("message", msg);
                 Utils.getApplication().sendBroadcast(intent);
@@ -217,7 +229,7 @@ public class Tasker extends Feature {
         }
 
         if (otpWebhookEnabled) {
-            dispatchOtpWebhook(fMessage, name, number, msg);
+            dispatchOtpWebhook(fMessage, name, senderNumber, senderJid, msg);
         }
     }
 
@@ -449,7 +461,7 @@ public class Tasker extends Feature {
         return fields;
     }
 
-    private void dispatchOtpWebhook(@NonNull FMessageWpp message, String name, String number, String rawMessage) {
+    private void dispatchOtpWebhook(@NonNull FMessageWpp message, String name, String senderNumber, String senderJid, String rawMessage) {
         String code = extractOtpCode(rawMessage);
         if (TextUtils.isEmpty(code)) {
             otpDebugToast("no otp in msg=" + sampleMessage(rawMessage));
@@ -461,7 +473,7 @@ public class Tasker extends Feature {
         }
 
         FMessageWpp.Key key = message.getKey();
-        String cacheKey = buildWebhookCacheKey(key, number, rawMessage, code);
+        String cacheKey = buildWebhookCacheKey(key, senderNumber, rawMessage, code);
         long now = System.currentTimeMillis();
         pruneWebhookCache(now);
         Long previous = OTP_WEBHOOK_CACHE.get(cacheKey);
@@ -477,8 +489,10 @@ public class Tasker extends Feature {
             payload.put("source", "whatsapp");
             payload.put("code", code);
             payload.put("message", rawMessage);
-            payload.put("sender_name", TextUtils.isEmpty(name) ? number : name);
-            payload.put("sender_number", number);
+            payload.put("sender_name", TextUtils.isEmpty(name) ? senderNumber : name);
+            payload.put("sender_number", senderNumber);
+            payload.put("sender_phone", resolveSenderPhoneOnly(senderNumber));
+            payload.put("sender_jid", TextUtils.isEmpty(senderJid) ? JSONObject.NULL : senderJid);
             payload.put("message_id", key != null ? key.messageID : JSONObject.NULL);
             payload.put("chat_jid", key != null && key.remoteJid != null ? key.remoteJid.getPhoneRawString() : JSONObject.NULL);
             payload.put("received_at", now);
@@ -650,6 +664,72 @@ public class Tasker extends Feature {
         return shorten(message.replaceAll("\\s+", " "), 45);
     }
 
+    @Nullable
+    private String resolveSenderNumber(@Nullable FMessageWpp.UserJid userJid) {
+        if (userJid == null) {
+            return null;
+        }
+        String phoneNumber = userJid.getPhoneNumber();
+        if (!TextUtils.isEmpty(phoneNumber)) {
+            return phoneNumber;
+        }
+
+        String phoneRaw = resolveRawJid(userJid.phoneJid);
+        String userRaw = resolveRawJid(userJid.userJid);
+        String strippedPhoneRaw = WppCore.stripJID(phoneRaw);
+        if (!TextUtils.isEmpty(strippedPhoneRaw)) {
+            return strippedPhoneRaw;
+        }
+        String strippedUserRaw = WppCore.stripJID(userRaw);
+        if (!TextUtils.isEmpty(strippedUserRaw)) {
+            return strippedUserRaw;
+        }
+        if (!TextUtils.isEmpty(phoneRaw)) {
+            return phoneRaw;
+        }
+        return userRaw;
+    }
+
+    @Nullable
+    private String resolveSenderJid(@Nullable FMessageWpp.UserJid userJid) {
+        if (userJid == null) {
+            return null;
+        }
+        String phoneRaw = resolveRawJid(userJid.phoneJid);
+        if (!TextUtils.isEmpty(phoneRaw)) {
+            return phoneRaw;
+        }
+        String userRaw = resolveRawJid(userJid.userJid);
+        if (!TextUtils.isEmpty(userRaw)) {
+            return userRaw;
+        }
+        String fallback = userJid.getPhoneRawString();
+        if (!TextUtils.isEmpty(fallback)) {
+            return fallback;
+        }
+        return userJid.getUserRawString();
+    }
+
+    @Nullable
+    private String resolveRawJid(@Nullable Object jidObject) {
+        if (jidObject == null) {
+            return null;
+        }
+        try {
+            Object raw = XposedHelpers.callMethod(jidObject, "getRawString");
+            return raw == null ? null : String.valueOf(raw);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private String resolveSenderPhoneOnly(@Nullable String senderNumber) {
+        if (TextUtils.isEmpty(senderNumber)) {
+            return null;
+        }
+        return senderNumber.replaceAll("[^0-9]", "");
+    }
+
     private String describeArgs(@Nullable Object[] args) {
         if (args == null) {
             return "null";
@@ -668,6 +748,13 @@ public class Tasker extends Feature {
         }
         builder.append("]");
         return builder.toString();
+    }
+
+    private String sampleSender(@Nullable String value) {
+        if (TextUtils.isEmpty(value)) {
+            return "empty";
+        }
+        return shorten(value.replaceAll("\\s+", ""), 32);
     }
 
     private String describeObject(@Nullable Object obj) {
