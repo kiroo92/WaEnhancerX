@@ -30,6 +30,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -196,10 +197,10 @@ public class Tasker extends Feature {
         var name = WppCore.getContactName(userJid);
         var senderNumber = resolveSenderNumber(userJid);
         var senderJid = resolveSenderJid(userJid);
-        var msg = fMessage.getMessageStr();
+        var msg = resolveMessageText(param, fMessage);
         if (TextUtils.isEmpty(msg)) {
             if (otpWebhookEnabled) {
-                otpDebugToast("receipt skipped empty msg");
+                otpDebugToast("receipt skipped empty msg candidates=" + summarizeMessageCandidates(param, fMessage));
             }
             return;
         }
@@ -235,6 +236,26 @@ public class Tasker extends Feature {
         if (otpWebhookEnabled) {
             dispatchOtpWebhook(fMessage, resolvedName, resolvedSenderNumber, resolvedSenderJid, msg);
         }
+    }
+
+    @Nullable
+    private String resolveMessageText(@NonNull XC_MethodHook.MethodHookParam param, @NonNull FMessageWpp fMessage) {
+        String direct = normalizeMessageText(fMessage.getMessageStr());
+        if (!TextUtils.isEmpty(direct)) {
+            return direct;
+        }
+
+        String fromObject = findBestMessageTextCandidate(fMessage.getObject());
+        if (!TextUtils.isEmpty(fromObject)) {
+            return fromObject;
+        }
+
+        String fromThisObject = findBestMessageTextCandidate(param.thisObject);
+        if (!TextUtils.isEmpty(fromThisObject)) {
+            return fromThisObject;
+        }
+
+        return findBestMessageTextCandidate(param.args);
     }
 
     @Nullable
@@ -350,6 +371,182 @@ public class Tasker extends Feature {
             } catch (Throwable ignored) {
             }
         }
+    }
+
+    @Nullable
+    private String findBestMessageTextCandidate(@Nullable Object root) {
+        if (root == null) {
+            return null;
+        }
+
+        ArrayList<String> candidates = new ArrayList<>();
+        Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        collectMessageTextCandidates(root, candidates, visited, 0);
+        return chooseBestMessageTextCandidate(candidates);
+    }
+
+    private void collectMessageTextCandidates(@Nullable Object value, @NonNull List<String> out,
+                                              @NonNull Set<Object> visited, int depth) {
+        if (value == null || depth > 3) {
+            return;
+        }
+
+        if (value instanceof CharSequence sequence) {
+            addMessageCandidate(sequence.toString(), out);
+            return;
+        }
+
+        if (visited.contains(value)) {
+            return;
+        }
+        visited.add(value);
+
+        Class<?> clazz = value.getClass();
+        if (clazz.isArray()) {
+            int len = java.lang.reflect.Array.getLength(value);
+            for (int i = 0; i < len && i < 10; i++) {
+                collectMessageTextCandidates(java.lang.reflect.Array.get(value, i), out, visited, depth + 1);
+            }
+            return;
+        }
+
+        if (value instanceof Iterable<?> iterable) {
+            int i = 0;
+            for (Object item : iterable) {
+                if (i++ >= 10) {
+                    break;
+                }
+                collectMessageTextCandidates(item, out, visited, depth + 1);
+            }
+            return;
+        }
+
+        if (value instanceof Map<?, ?> map) {
+            int i = 0;
+            for (Object item : map.values()) {
+                if (i++ >= 10) {
+                    break;
+                }
+                collectMessageTextCandidates(item, out, visited, depth + 1);
+            }
+            return;
+        }
+
+        if (FMessageWpp.TYPE != null && FMessageWpp.TYPE.isInstance(value)) {
+            try {
+                addMessageCandidate(new FMessageWpp(value).getMessageStr(), out);
+            } catch (Throwable ignored) {
+            }
+        }
+
+        if (shouldSkipGraphScan(clazz)) {
+            return;
+        }
+
+        for (Field field : getAllFields(clazz)) {
+            if (Modifier.isStatic(field.getModifiers()) || field.getType().isPrimitive()) {
+                continue;
+            }
+            try {
+                field.setAccessible(true);
+                collectMessageTextCandidates(field.get(value), out, visited, depth + 1);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    private void addMessageCandidate(@Nullable String value, @NonNull List<String> out) {
+        String normalized = normalizeMessageText(value);
+        if (TextUtils.isEmpty(normalized)) {
+            return;
+        }
+        if (normalized.length() > 2048) {
+            normalized = normalized.substring(0, 2048);
+        }
+        out.add(normalized);
+    }
+
+    @Nullable
+    private String chooseBestMessageTextCandidate(@NonNull List<String> candidates) {
+        String best = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (String candidate : candidates) {
+            int score = scoreMessageTextCandidate(candidate);
+            if (score > bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private int scoreMessageTextCandidate(@NonNull String candidate) {
+        String code = extractOtpCode(candidate);
+        if (TextUtils.isEmpty(code)) {
+            return Integer.MIN_VALUE / 4;
+        }
+
+        int score = 100;
+        String normalized = candidate.trim();
+        if (OTP_KEYWORD_PATTERN.matcher(normalized).find()) {
+            score += 120;
+        }
+        if (normalized.contains(" ")) {
+            score += 20;
+        }
+        if (normalized.contains("\n") || normalized.contains("\r")) {
+            score += 10;
+        }
+        int length = normalized.length();
+        if (length <= 8) {
+            score += 8;
+        } else if (length <= 32) {
+            score += 20;
+        } else if (length <= 160) {
+            score += 30;
+        } else {
+            score += 10;
+        }
+        if (normalized.contains("@")) {
+            score -= 40;
+        }
+        if (normalized.matches("^[A-Za-z0-9]{9,}$") && !normalized.contains(" ")) {
+            score -= 20;
+        }
+        return score;
+    }
+
+    @Nullable
+    private String normalizeMessageText(@Nullable String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return TextUtils.isEmpty(normalized) ? null : normalized;
+    }
+
+    @Nullable
+    private String summarizeMessageCandidates(@Nullable Object root, @NonNull FMessageWpp fMessage) {
+        ArrayList<String> candidates = new ArrayList<>();
+        Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        collectMessageTextCandidates(fMessage.getObject(), candidates, visited, 0);
+        collectMessageTextCandidates(root, candidates, visited, 0);
+        if (candidates.isEmpty()) {
+            return "none";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        int limit = Math.min(candidates.size(), 3);
+        for (int i = 0; i < limit; i++) {
+            if (i > 0) {
+                builder.append(" | ");
+            }
+            builder.append(sampleMessage(candidates.get(i)));
+        }
+        if (candidates.size() > limit) {
+            builder.append(" | +").append(candidates.size() - limit);
+        }
+        return builder.toString();
     }
 
     @Nullable
